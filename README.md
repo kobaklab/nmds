@@ -4,7 +4,44 @@ Code for the experiments of *Non-metric multidimensional scaling at scale*:
 `code/stochastic_mds.py` is the stochastic (mini-batch) metric / non-metric MDS; everything else
 runs the comparisons and produces the tables and figures.
 
-## Setup
+* **To use our MDS in your own code**, see the next section: one file, no need for the rest of this repository.
+* **To reproduce our experiments**, continue with "Setup for reproducing the experiments".
+
+## Using the stochastic MDS in your own code
+
+`code/stochastic_mds.py` is a single self-contained file (not a package; it imports nothing from the rest of
+this repository). Copy it into your project and import the function:
+
+```
+pip install numpy scipy "scikit-learn>=1.8" torch     # its only dependencies; CPU-only PyTorch is enough
+```
+
+```python
+from sklearn.datasets import load_digits
+from scipy.spatial.distance import pdist, squareform
+from stochastic_mds import stochasticMDS
+
+X, y = load_digits(return_X_y=True)                    # data matrix, shape (1797, 64)
+
+Z, stress_curve = stochasticMDS(X)                     # metric MDS
+Z, stress_curve = stochasticMDS(X, non_metric=True)    # non-metric MDS: Z has shape (1797, 2)
+
+# from an (n, n) distance matrix instead of a data matrix
+D = squareform(pdist(X))
+Z, _ = stochasticMDS(D, precomputed_distances=True, non_metric=True)
+
+import matplotlib.pyplot as plt                        # optional
+plt.scatter(Z[:, 0], Z[:, 1], c=y, cmap="tab10", s=3)
+```
+
+The three runs above take about 15 seconds on one CPU core (progress is printed every 10 epochs; pass `verbose=False` to silence it).
+As a sanity check, the last entry of `stress_curve` on digits is about 0.33 for metric and 0.28 for non-metric MDS.
+
+**Scale.** The distances are normalized in every mini-batch (mean squared off-diagonal value 1), so the defaults
+work for any data scale. The returned embedding is on this normalized scale, not on the scale of the data, unlike
+the output of scikit-learn's metric MDS.
+
+## Setup for reproducing the experiments
 
 ```
 uv sync                       # creates .venv (CPU-only PyTorch on Linux/Windows)

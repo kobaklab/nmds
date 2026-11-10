@@ -111,6 +111,7 @@ def run_embeddings(jobs, force=False):
         try:
             X, y, precomputed = DATASETS[dataset]["load"]()
         except Exception as error:
+            traceback.print_exc()
             _log(f"[embed] {dataset}: cannot load dataset ({type(error).__name__}: {error})")
             stats["failed"] += [(job, error) for job in todo]
             continue
@@ -157,6 +158,7 @@ def run_evaluations(jobs, metric_names=None, force=()):
         try:
             X, y, precomputed = DATASETS[dataset]["load"]()
         except Exception as error:
+            traceback.print_exc()
             _log(f"[evaluate] {dataset}: cannot load dataset ({type(error).__name__}: {error})")
             stats["failed"] += [(job, error) for job, *_ in pending]
             continue

@@ -55,8 +55,12 @@ def load_tasic():
 
 
 def load_mnist():
+    # parser="liac-arff" on purpose: sklearn's default parser for dense data ("pandas") fails with
+    # pandas >= 3 (TypeError in strip_single_quotes: the class labels 0-9 arrive as ints). The
+    # liac-arff parser takes ~10 s for MNIST.
     X, y = fetch_openml(
-        "mnist_784", version=1, return_X_y=True, as_frame=False, data_home=DATA / "openml"
+        "mnist_784", version=1, return_X_y=True, as_frame=False, parser="liac-arff",
+        data_home=DATA / "openml",
     )
     return X, y.astype(int), False
 

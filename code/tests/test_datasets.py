@@ -47,3 +47,17 @@ def test_load_genomes_tolerates_float32_noise_on_the_diagonal(genomes_dir):
     np.save(path / "genomes-data/1000-genomes-D.npy", D)
     loaded, _, _ = datasets.load_genomes()
     assert (np.diag(loaded) == 0).all()
+
+
+def test_load_mnist_uses_the_liac_arff_parser(monkeypatch):
+    """Regression guard: sklearn's default "pandas" parser raises a TypeError with pandas >= 3."""
+    calls = {}
+
+    def fake_fetch_openml(name, **kwargs):
+        calls.update(kwargs, name=name)
+        return np.zeros((5, 3)), np.array(list("01234"), dtype=object)
+
+    monkeypatch.setattr(datasets, "fetch_openml", fake_fetch_openml)
+    X, y, precomputed = datasets.load_mnist()
+    assert calls["name"] == "mnist_784" and calls["parser"] == "liac-arff"
+    assert y.dtype.kind == "i" and list(y) == [0, 1, 2, 3, 4] and not precomputed

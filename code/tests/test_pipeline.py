@@ -153,6 +153,19 @@ def test_a_failing_warm_up_is_ignored(toy, monkeypatch):
     assert stats["failed"] == [] and stats["run"] == 1
 
 
+def test_a_dataset_that_cannot_be_loaded_is_reported_with_its_traceback(toy, capsys):
+    datasets, _ = toy
+
+    def broken_loader():
+        raise ValueError("cannot parse the file")
+
+    datasets["a"]["load"] = broken_loader
+    stats = pipeline.run_embeddings(plan.main_jobs(datasets=["a"], methods=["det"], seeds=[0]))
+    captured = capsys.readouterr()
+    assert len(stats["failed"]) == 1
+    assert "Traceback" in captured.err and "cannot parse the file" in captured.err  # not only the one-line message
+
+
 # --- evaluate --------------------------------------------------------------------------
 
 def test_every_seed_is_evaluated_even_for_deterministic_methods(toy):

@@ -11,3 +11,7 @@ data/*
 # The .gitkeep only keeps the empty folder in the repository.
 results/*
 !results/.gitkeep
+!results/all_runs.csv
+!results/environment.json
+!results/ablations/
+!results/ablations/*.csv

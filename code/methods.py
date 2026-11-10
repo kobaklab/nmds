@@ -8,6 +8,9 @@ deterministic=True means the result does not depend on the seed, so the method i
 embedded once per dataset instead of once per seed (tests/test_methods.py checks
 that this is true).
 
+warm_up_shape (optional, default (300, 20)) is the size of the synthetic feature matrix that
+pipeline.py runs the method on, untimed, before its first timed run in a process.
+
 To add a comparison method, write a function and add one line to METHODS.
 Heavy imports (torch, openTSNE, umap, pacmap) happen inside the functions, so importing
 this module is cheap and torch is only needed for the SGD methods.
@@ -105,7 +108,11 @@ METHODS = {
     "metric_mds": dict(fn=run_metric_mds, deterministic=True),
     "nonmetric_mds": dict(fn=run_nonmetric_mds, deterministic=True),
     "tsne": dict(fn=run_tsne, deterministic=False),
-    "umap": dict(fn=run_umap, deterministic=False),
+    # UMAP's approximate nearest-neighbour search (pynndescent, compiled by numba on first use) is only
+    # reached for n >= 4096, and its breadth-first tree building only when n * 4 * d > 1 MiB
+    # (pynndescent.hybrid_forest.LOCAL_SUBTREE_BYTES); smaller warm-ups leave seconds of compilation
+    # in the first timed run on blobs, Tasic or MNIST.
+    "umap": dict(fn=run_umap, deterministic=False, warm_up_shape=(4097, 128)),
     "pacmap": dict(fn=run_pacmap, deterministic=False),
     "sgd_mmds": dict(fn=run_sgd_mmds, deterministic=False),
     "sgd_nmds": dict(fn=run_sgd_nmds, deterministic=False),

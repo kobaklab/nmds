@@ -138,6 +138,22 @@ def test_warm_up_runs_once_per_method_and_is_not_timed(toy, monkeypatch):
     assert all(rio.read_embedding_meta(j.emb_path)["runtime"] < 0.3 for j in jobs)
 
 
+def test_a_method_can_ask_for_a_larger_warm_up_but_distance_matrices_stay_small(toy, monkeypatch):
+    _, methods = toy
+    monkeypatch.setattr(pipeline, "WARM_UP", True)
+    monkeypatch.setattr(pipeline, "_warmed", set())
+    shapes = []
+
+    def record(X, precomputed, seed):
+        shapes.append((X.shape, precomputed))
+        return PCA(2).fit_transform(X)
+
+    methods["big_warm_up"] = dict(fn=record, deterministic=True, warm_up_shape=(500, 7))
+    pipeline._warm_up("big_warm_up", False)
+    pipeline._warm_up("big_warm_up", True)
+    assert shapes == [((500, 7), False), ((300, 300), True)]
+
+
 def test_a_failing_warm_up_is_ignored(toy, monkeypatch):
     _, methods = toy
     monkeypatch.setattr(pipeline, "WARM_UP", True)

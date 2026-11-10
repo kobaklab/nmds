@@ -89,7 +89,8 @@ def _warm_up(method, precomputed):
         return
     _warmed.add((method, precomputed))
     rng = np.random.default_rng(0)
-    X = rng.normal(size=(300, 20)) @ rng.normal(size=(20, 20))
+    n, d = (300, 20) if precomputed else METHODS[method].get("warm_up_shape", (300, 20))
+    X = rng.normal(size=(n, d))
     if precomputed:
         from scipy.spatial.distance import cdist
 

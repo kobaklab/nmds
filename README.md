@@ -117,6 +117,7 @@ many cores were available or pin the thread counts (`NUMBA_NUM_THREADS`, `OMP_NU
 
 One-off costs (importing libraries such as torch, numba compilation, thread start-up) are not part of the runtime: the
 first time a method runs in a process, `embed.py` runs it once on a tiny synthetic problem outside the timer
-(`pipeline.WARM_UP`). Code paths that tiny data does not reach can still compile on first use, e.g. UMAP's approximate
-neighbour search above 4096 points. If a first run looks inflated, rerun it with `embed.py --force --methods <name>`: numba
-caches compiled code on disk, so the rerun is clean.
+(`pipeline.WARM_UP`). A method can ask for a larger warm-up with `warm_up_shape` in `methods.py`: UMAP uses 4097 x 128,
+because its approximate neighbour search is only reached for n >= 4096 points with n * 4 * d > 1 MiB (with a smaller
+warm-up, 3-30 s of numba compilation lands in the first timed UMAP run on blobs, Tasic or MNIST). If a first run still
+looks inflated, rerun it with `embed.py --force --methods <name>`: numba caches compiled code on disk, so the rerun is clean.

@@ -66,3 +66,10 @@ def test_pca_then_metric_mds(X):
     # same result whether PCA coordinates come from features or from distances
     from_distances = run_metric_mds(pairwise_distances(X), True, 0, n_pcs=3)
     np.testing.assert_allclose(pdist(reduced), pdist(from_distances), rtol=1e-3, atol=1e-3)
+
+
+def test_umap_is_warmed_up_with_a_matrix_that_reaches_its_approximate_neighbour_search():
+    """n >= 4096 switches UMAP from exact to approximate neighbours; pynndescent's breadth-first tree
+    building (more numba functions) needs n * 4 * d > 1 MiB on top of that (hybrid_forest.LOCAL_SUBTREE_BYTES)."""
+    n, d = METHODS["umap"]["warm_up_shape"]
+    assert n >= 4096 and n * 4 * d > 1 << 20

@@ -5,6 +5,8 @@ import pytest
 from sklearn.datasets import make_blobs
 from sklearn.decomposition import PCA
 
+import time
+
 import ablations
 import metrics
 import pipeline
@@ -37,6 +39,7 @@ def broken(X, precomputed, seed):
 @pytest.fixture
 def toy(tmp_path, monkeypatch):
     CALLS.clear()
+    monkeypatch.setattr(pipeline, "WARM_UP", False)   # these tests count method calls; see the warm-up tests below
     datasets = {
         "a": dict(load=lambda: (X_TOY, Y_TOY, False)),
         "b": dict(
@@ -114,6 +117,40 @@ def test_a_failing_method_does_not_stop_the_others(toy):
     methods["broken"] = dict(fn=broken, deterministic=True)
     stats = pipeline.run_embeddings(plan.main_jobs(datasets=["a"], methods=["broken", "det"]))
     assert [j.method for j, _ in stats["failed"]] == ["broken"] and stats["run"] == 1
+
+
+def test_warm_up_runs_once_per_method_and_is_not_timed(toy, monkeypatch):
+    _, methods = toy
+    monkeypatch.setattr(pipeline, "WARM_UP", True)
+    monkeypatch.setattr(pipeline, "_warmed", set())
+    shapes = []
+
+    def slow_first(X, precomputed, seed):
+        shapes.append(X.shape)
+        if len(shapes) == 1:
+            time.sleep(0.4)  # a one-off cost on the first call, like importing torch or compiling with numba
+        return PCA(2).fit_transform(X)
+
+    methods["slow_first"] = dict(fn=slow_first, deterministic=False)
+    jobs = plan.main_jobs(datasets=["a"], methods=["slow_first"], seeds=[0, 1, 2])
+    assert pipeline.run_embeddings(jobs)["run"] == 3
+    assert shapes[0] == (300, 20) and shapes[1:] == [X_TOY.shape] * 3   # one warm-up on tiny data, then the three real runs
+    assert all(rio.read_embedding_meta(j.emb_path)["runtime"] < 0.3 for j in jobs)
+
+
+def test_a_failing_warm_up_is_ignored(toy, monkeypatch):
+    _, methods = toy
+    monkeypatch.setattr(pipeline, "WARM_UP", True)
+    monkeypatch.setattr(pipeline, "_warmed", set())
+
+    def picky(X, precomputed, seed):
+        if len(X) == 300:
+            raise RuntimeError("fails on the warm-up problem only")
+        return PCA(2).fit_transform(X)
+
+    methods["picky"] = dict(fn=picky, deterministic=True)
+    stats = pipeline.run_embeddings(plan.main_jobs(datasets=["a"], methods=["picky"], seeds=[0]))
+    assert stats["failed"] == [] and stats["run"] == 1
 
 
 # --- evaluate --------------------------------------------------------------------------

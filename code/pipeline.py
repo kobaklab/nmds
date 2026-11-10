@@ -75,6 +75,32 @@ def embedding_is_current(job):
         return False  # unreadable file: recompute
 
 
+WARM_UP = True
+_warmed = set()
+
+
+def _warm_up(method, precomputed):
+    """Pay the one-off costs of a method (importing its libraries, numba compilation, thread
+    start-up) on a tiny synthetic problem, outside the timer, the first time it runs in this
+    process. Otherwise the first call of every method would include them (e.g. importing
+    torch for the SGD methods, or compiling UMAP and PaCMAP), which can be many seconds.
+    Failures are ignored: the real run reports its own errors."""
+    if not WARM_UP or (method, precomputed) in _warmed:
+        return
+    _warmed.add((method, precomputed))
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(300, 20)) @ rng.normal(size=(20, 20))
+    if precomputed:
+        from scipy.spatial.distance import cdist
+
+        X = cdist(X, X)
+    _log(f"[embed] warm-up (not timed): {method}{' on a distance matrix' if precomputed else ''}")
+    try:
+        METHODS[method]["fn"](X, precomputed, 0)
+    except Exception:
+        pass
+
+
 def run_embeddings(jobs, force=False):
     stats = {"run": 0, "cached": 0, "failed": []}
     for dataset, group in _by_dataset(_unique(jobs, "emb_path")):
@@ -89,6 +115,7 @@ def run_embeddings(jobs, force=False):
             stats["failed"] += [(job, error) for job in todo]
             continue
         for job in todo:
+            _warm_up(job.method, precomputed)
             _log(f"[embed] {job.name}, seed {job.emb_seed} ...")
             try:
                 start = time.perf_counter()

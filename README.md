@@ -112,5 +112,11 @@ Figures: open `code/notebooks/figures_embeddings.ipynb` and `figures_sgd_params.
 Runtime is the wall time of the whole method function (for SGD including its initialization), as run by
 `embed.py`, which runs one method at a time. Run it on an otherwise idle machine; `results/environment.json` records
 versions and CPU count. UMAP and t-SNE run single-threaded (a seed disables UMAP's parallelism; openTSNE's default is
-one job). The first UMAP call in a fresh environment includes numba's one-off compilation, so its runtime is inflated;
-rerun that one with `embed.py --force --methods umap --datasets <name>` if it matters.
+one job); PaCMAP (numba, faiss) and torch/BLAS in the SGD and SMACOF methods may use all cores, so say in the paper how
+many cores were available or pin the thread counts (`NUMBA_NUM_THREADS`, `OMP_NUM_THREADS`, ...).
+
+One-off costs (importing libraries such as torch, numba compilation, thread start-up) are not part of the runtime: the
+first time a method runs in a process, `embed.py` runs it once on a tiny synthetic problem outside the timer
+(`pipeline.WARM_UP`). Code paths that tiny data does not reach can still compile on first use, e.g. UMAP's approximate
+neighbour search above 4096 points. If a first run looks inflated, rerun it with `embed.py --force --methods <name>`: numba
+caches compiled code on disk, so the rerun is clean.

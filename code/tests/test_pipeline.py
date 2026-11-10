@@ -5,6 +5,7 @@ import pytest
 from sklearn.datasets import make_blobs
 from sklearn.decomposition import PCA
 
+import sys
 import time
 
 import ablations
@@ -252,12 +253,31 @@ def test_collect_table_and_report(toy):
 def test_real_ablation_grids():
     count = lambda name: len(ablations.ablation_jobs([name]))
     assert count("isotonic_frequency") == (5 + 4) * 3       # MNIST skips "every 100 epochs"
-    assert count("batch_lr") == 2 * 24 * 3
+    assert count("batch_lr") == 2 * 24 * 1                  # the longest ablation is configured with one seed
     assert count("pca_then_mmds") == 8 * 3
     jobs = ablations.ablation_jobs()
     assert len({j.metrics_path for j in jobs}) == len(jobs)
     pca = [j for j in jobs if j.tags.get("n_pcs") == 10]
     assert len({j.emb_path for j in pca}) == 1               # metric MDS is deterministic: one embedding, 3 evaluations
+
+
+def test_an_ablation_can_set_its_own_seeds_and_seeds_on_the_command_line_override_them():
+    assert {j.seed for j in ablations.ablation_jobs(["batch_lr"])} == {0}
+    assert {j.seed for j in ablations.ablation_jobs(["isotonic_frequency"])} == {0, 1, 2}
+    assert len(ablations.ablation_jobs(["batch_lr"], seeds=[0, 1, 2])) == 3 * len(ablations.ablation_jobs(["batch_lr"]))
+    assert {j.seed for j in ablations.ablation_jobs(["batch_lr"], ["tasic"], seeds=[2])} == {2}
+
+
+def test_status_reports_only_the_configured_seeds_and_collect_rejects_a_seeds_flag(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(ablations, "RESULTS", tmp_path)
+    monkeypatch.setattr(sys, "argv", ["ablations.py", "status", "--ablations", "batch_lr"])
+    ablations.main()
+    out = capsys.readouterr().out
+    assert "embedding missing for seeds [0]" in out and "[0, 1, 2]" not in out      # batch_lr is planned with seed 0 only
+    monkeypatch.setattr(sys, "argv", ["ablations.py", "collect", "--ablations", "batch_lr", "--seeds", "0", "1"])
+    with pytest.raises(SystemExit) as exit_info:
+        ablations.main()
+    assert exit_info.value.code == 2
 
 
 def test_ablation_grid_overrides_dataset_settings(toy, monkeypatch):

@@ -11,6 +11,8 @@ An ablation takes a base method from METHODS and runs it on each point of a grid
 its keyword arguments. The dataset's usual settings for that method (method_kwargs in
 datasets.py) apply first and the grid values override them. Stochastic methods get
 one embedding per seed; deterministic ones are embedded once, as in the main runs.
+Every stage uses the seeds of the entry (default: three seeds; batch_lr, the longest, uses one);
+--seeds overrides them for embed and evaluate.
 To add an ablation, add an entry to ABLATIONS.
 """
 import argparse
@@ -37,6 +39,7 @@ ABLATIONS = {
     "batch_lr": dict(
         method="sgd_mmds",
         datasets=["tasic", "mnist"],
+        seeds=[0],  # the longest ablation (24 grid points x 2 datasets): one seed instead of three
         grid={
             "batch_size": [100, 300, 1000, 3000],
             "lr": [0.001, 0.003, 0.01, 0.03, 0.1, 0.3],
@@ -67,7 +70,7 @@ def ablation_jobs(names=None, datasets=None, seeds=None):
                     continue
                 stem = "__".join([method] + [f"{k}={v}" for k, v in point.items()])
                 base = RESULTS / "ablations" / name
-                for seed in seeds or plan.SEEDS:
+                for seed in seeds or spec.get("seeds", plan.SEEDS):
                     emb_seed = plan.emb_seed_for(method, seed)
                     jobs.append(
                         plan.Job(
@@ -89,15 +92,15 @@ def main():
     parser.add_argument("stage", choices=["embed", "evaluate", "collect", "status"])
     parser.add_argument("--ablations", nargs="+", choices=list(ABLATIONS), help="default: all")
     parser.add_argument("--datasets", nargs="+", choices=list(DATASETS), help="default: all")
-    parser.add_argument("--seeds", nargs="+", type=int, default=plan.SEEDS, help=f"default: {plan.SEEDS}")
+    parser.add_argument("--seeds", nargs="+", type=int, help=f"default: the seeds of each ablation ({plan.SEEDS}, batch_lr: one)")
     parser.add_argument("--force", action="store_true", help="embed: recompute even if up to date")
     parser.add_argument("--metrics", nargs="+", choices=list(METRICS), help="evaluate: default all")
     parser.add_argument("--force-metrics", nargs="+", choices=list(METRICS), default=[],
                         help="evaluate: recompute these metrics even if already stored")
     args = parser.parse_args()
 
-    if args.stage in ("collect", "status") and (args.datasets or args.seeds != plan.SEEDS):
-        parser.error("collect/status always cover all datasets and seeds of the chosen ablations")
+    if args.stage in ("collect", "status") and (args.datasets or args.seeds):
+        parser.error("collect/status always cover all datasets and the configured seeds of the chosen ablations")
 
     jobs = ablation_jobs(args.ablations, args.datasets, args.seeds)
     if args.stage == "embed":

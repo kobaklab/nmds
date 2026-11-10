@@ -88,7 +88,8 @@ Everything takes `--datasets`, `--methods`, `--seeds` to restrict what runs, e.g
 Stages are incremental: finished work is skipped, so you can interrupt and resume. `embed.py --force`
 recomputes. A crashing run is logged and skipped; `collect.py` tells you what is missing.
 
-Ablations are kept apart from the main runs:
+Ablations are kept apart from the main runs. Each uses three seeds, except `batch_lr` (the longest), which is configured
+with one (`seeds` in its entry in `code/ablations.py`); `--seeds` overrides the configured seeds for `embed` and `evaluate`:
 
 ```
 uv run python code/ablations.py embed          # also: evaluate, collect, status  (--ablations, --datasets, --seeds)

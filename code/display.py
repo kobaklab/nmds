@@ -33,6 +33,15 @@ METHOD_LABELS = {
 }
 
 
+# Runtimes are shown in whole seconds, except on these datasets: whole minutes.
+RUNTIME_IN_MINUTES = {"tasic", "mnist"}
+
+# LaTeX tables: the neighbour-embedding methods come after a \midrule; spelling of row labels.
+NEIGHBOUR_ROWS = {"t-SNE", "UMAP", "PaCMAP"}  # rows of the metric tables
+NEIGHBOUR_METHODS = {"tsne", "umap", "pacmap"}  # rows of the runtime table
+LATEX_LABELS = {"t-SNE": r"$t$-SNE"}
+
+
 def method_for(row, dataset):
     spec = ROWS[row]
     return spec.get(dataset, spec["default"])

@@ -80,6 +80,7 @@ uv run python code/evaluate.py                 # all metrics (fast)
 uv run python code/collect.py                  # results/all_runs.csv + list of anything missing
 uv run python code/tables.py stress            # also: runtime (every method), triplet_acc, knn_recall, pearson, ..., isotonic, pca;
                                                # `summary` = all metrics + runtime per method
+uv run python code/tables.py stress --latex    # any table (except `summary`) as LaTeX rows for the manuscript, stds in \scriptsize
 ```
 
 Everything takes `--datasets`, `--methods`, `--seeds` to restrict what runs, e.g.
@@ -107,7 +108,9 @@ Figures: open `code/notebooks/figures_embeddings.ipynb` and `figures_sgd_params.
   noise; for a deterministic method it is evaluation noise only (and exactly zero for metrics that are exact
   for n ≤ 5000, such as stress-1 on the small datasets).
 * Within one (dataset, seed) all methods share the same subsample, triplets and split, so comparisons are paired.
-* The std is the sample std (`DDOF = 1` in `tables.py`).
+* The std is the sample std (`DDOF = 1` in `tables.py`). Tables show it whenever it is above zero and always for
+  stochastic methods, even as `± 0.00` when every seed agrees; a deterministic method (SMACOF, classical MDS) with
+  identical values in all seeds has none.
 
 ## Metric definitions
 

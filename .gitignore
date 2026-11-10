@@ -14,4 +14,5 @@ results/*
 !results/all_runs.csv
 !results/environment.json
 !results/ablations/
+results/ablations/*
 !results/ablations/*.csv

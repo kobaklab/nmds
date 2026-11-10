@@ -1,0 +1,36 @@
+[project]
+name = "nmds"
+version = "0.1.0"
+description = "Stochastic MDS and NMDS: non-metric multidimensional scaling at scale"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "scipy",
+    "scikit-learn>=1.8",  # needs ClassicalMDS and MDS(metric_mds=..., init="classical_mds")
+    "pandas",
+    "matplotlib",
+    "opentsne",
+    "umap-learn",
+    "pacmap",
+    "torch",
+]
+
+[dependency-groups]
+dev = ["pytest", "jupyterlab"]
+
+[tool.uv]
+package = false  # plain scripts in code/, nothing to install
+
+# CPU-only PyTorch wheels on Linux/Windows (the default PyPI wheels there pull in
+# gigabytes of CUDA libraries). On macOS the PyPI wheels are already CPU-only.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.pytest.ini_options]
+pythonpath = ["code"]
+testpaths = ["code/tests"]

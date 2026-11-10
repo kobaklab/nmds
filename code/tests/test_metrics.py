@@ -141,6 +141,19 @@ def test_precomputed_equals_features(blobs, sklearn_embeddings):
         assert METRICS[name](ctx_x, Z2) == pytest.approx(METRICS[name](ctx_d, Z2), rel=1e-6)
 
 
+def test_nonmetric_stress_equals_sklearn_isotonic_regression_also_with_many_tied_distances():
+    """stress1_nonmetric uses scipy's isotonic regression on a pre-sorted order; sklearn's IsotonicRegression
+    is the reference. Integer-valued features give many exactly tied original distances."""
+    rng = np.random.default_rng(1)
+    X = rng.integers(0, 4, size=(90, 5)).astype(float)
+    Z = X[:, :2] + rng.normal(scale=0.8, size=(90, 2))
+    d1, d2 = pdist(X), pdist(Z)
+    assert len(np.unique(d1)) < len(d1) / 20  # really many ties
+    reference = IsotonicRegression(out_of_bounds="clip").fit_transform(d1, d2)
+    expected = np.sqrt(np.sum((d2 - reference) ** 2) / np.sum(d2 ** 2))
+    assert metrics.stress1_nonmetric(EvalContext(X, None, False, seed=0), Z) == pytest.approx(expected, rel=1e-12)
+
+
 # --- correlations ---------------------------------------------------------------
 
 def test_pearson_spearman_match_scipy(blobs, sklearn_embeddings):

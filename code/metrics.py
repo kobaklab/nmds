@@ -19,8 +19,8 @@ from functools import cached_property
 
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
+from scipy.optimize import isotonic_regression
 from scipy.stats import rankdata
-from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
@@ -56,6 +56,19 @@ class EvalContext:
     @cached_property
     def d1_ranks(self):
         return rankdata(self.d1v)
+
+    @cached_property
+    def d1_sorted(self):
+        """For stress1_nonmetric: the order of the original distances and their groups of tied
+        values. An isotonic regression sorts by the original distances, which never change, so
+        this is done once per context and not for every embedding."""
+        order = np.argsort(self.d1v, kind="stable")
+        sorted_d1 = self.d1v[order]
+        starts_group = np.empty(len(sorted_d1), dtype=bool)
+        starts_group[0] = True
+        np.not_equal(sorted_d1[1:], sorted_d1[:-1], out=starts_group[1:])
+        group = np.cumsum(starts_group, dtype=np.int32) - 1
+        return order, group, np.bincount(group).astype(float)
 
     def d2v(self, Z):
         """Pairwise distances within the subsample of the embedding Z (condensed).
@@ -227,9 +240,15 @@ def stress1_nonmetric(ctx, Z):
     For embeddings that are not on that scale (t-SNE) the notebook version depends on
     the scale of Z (digits t-SNE: 0.70, 0.71 or 0.64 depending on the scale; this: 0.36).
     """
-    d1, d2 = ctx.d1v, ctx.d2v(Z)
-    disparities = IsotonicRegression(out_of_bounds="clip").fit_transform(d1, d2)
-    return float(np.sqrt(np.sum((d2 - disparities) ** 2) / np.sum(d2 ** 2)))
+    # Equal to fitting sklearn's IsotonicRegression(d1 -> d2) (the same PAVA kernel), but without its
+    # per-call sorting and validation (12x faster on 12.5M pairs): the pairs are visited in the order of
+    # d1 (tied distances merged into their mean, as sklearn does), and the sum of squares is order-free.
+    order, group, counts = ctx.d1_sorted
+    d2 = ctx.d2v(Z)
+    d2_sorted = d2[order]
+    group_means = np.bincount(group, weights=d2_sorted) / counts
+    disparities = isotonic_regression(group_means, weights=counts, increasing=True).x[group]
+    return float(np.sqrt(np.sum((d2_sorted - disparities) ** 2) / np.sum(d2 ** 2)))
 
 
 METRICS = {

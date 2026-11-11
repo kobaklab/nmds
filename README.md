@@ -62,6 +62,7 @@ code/
   evaluate.py         stage 2: compute metrics for the saved embeddings
   collect.py          stage 3: join everything into results/all_runs.csv, report what is missing
   ablations.py        parameter grids (isotonic frequency, batch size x lr, PCA before MDS, random init), same stages
+  mds_robustness.py   separate from the pipeline: the noise-robustness simulation of metric vs non-metric MDS
   tables.py           print mean ± std tables to copy into the manuscript
   display.py          names / row order / which method fills which table row
   plan.py, pipeline.py, results_io.py, paths.py    shared machinery
@@ -99,6 +100,28 @@ uv run python code/tables.py isotonic          # and: pca
 Figures: open `code/notebooks/figures_embeddings.ipynb`, `figures_sgd_params.ipynb` and `figures_supplement.ipynb`
 (`uv run jupyter lab`; the last one needs `ablations.py embed/evaluate --ablations mmds_random_init`, see its first cell).
 Tests: `uv run pytest`.
+
+### Robustness to high-dimensional noise (separate from the pipeline)
+
+The simulation behind the figure `robustness` and its appendix is independent of everything above: three clusters
+plus d noise dimensions, metric and non-metric MDS from a random initialization, and the d at which the kNN accuracy
+of the embedding collapses. `code/mds_robustness.py` runs it and saves `results/robustness/<setting>.npz`; the notebook
+`code/notebooks/figures_robustness.ipynb` makes the figure and the slopes.
+
+```
+uv run python code/mds_robustness.py --jobs 8               # all six settings of the paper, 10 repetitions each
+uv run python code/mds_robustness.py --reps 20 --jobs 8     # more repetitions (the saved ones are kept)
+```
+
+On one core the figure's setting takes about 20 minutes, each of the other settings with about 99 points 20 to 30 minutes, and
+the setting with 297 points hours; `--jobs` runs the MDS fits in parallel. Single settings can be run by name (`CONFIGS` in the file).
+
+Settings are in `CONFIGS` in that file. Results are saved after every repetition and a rerun only computes what is missing.
+Each repetition has its own noise and its own random initialization. The kNN accuracy is averaged over the repetitions
+before the breaking dimension (the first d below 0.7) is read off, which also averages out the occasional bad random start
+of MDS (at least three repetitions are needed for that). The notebook makes the figure and prints the slopes of every setting
+in the format of the appendix table. `--n-init 3` (best of three random starts per fit; the paper uses one, about 10x slower)
+is an alternative for single repetitions.
 
 ## What counts as one run, and where the ± comes from
 

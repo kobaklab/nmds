@@ -207,16 +207,16 @@ def write_isotonic_csv(tmp_path):
     pd.DataFrame(rows).to_csv(tmp_path / "ablations" / "isotonic_frequency.csv", index=False)
 
 
-def test_isotonic_table_latex_is_the_manuscript_format_in_seconds_without_stds(tmp_path, monkeypatch, capsys):
+def test_isotonic_table_latex_is_in_seconds_with_small_stds(tmp_path, monkeypatch, capsys):
     write_isotonic_csv(tmp_path)
     out, err = run_tables(monkeypatch, capsys, tmp_path, "isotonic", "--latex")
     assert out.splitlines() == [
         r"\midrule",
-        r"Once every 100 epochs & 76 s & 0.249 & --- & --- \\",
-        r"Once every 10 epochs & 80 s & 0.247 & 692 s & 0.297 \\",
-        r"Once every epoch (default) & 80 s & 0.249 & 622 s & 0.293 \\",
-        r"Once every 10 batches & 83 s & 0.247 & 657 s & 0.293 \\",
-        r"Every batch & 118 s & 0.245 & 1058 s & 0.292 \\",
+        r"Once every 100 epochs & 76 {\scriptsize$\pm$2} s & 0.249 {\scriptsize$\pm$.001} & --- & --- \\",
+        r"Once every 10 epochs & 80 {\scriptsize$\pm$2} s & 0.247 {\scriptsize$\pm$.001} & 692 {\scriptsize$\pm$2} s & 0.297 {\scriptsize$\pm$.001} \\",
+        r"Once every epoch (default) & 80 {\scriptsize$\pm$2} s & 0.249 {\scriptsize$\pm$.001} & 622 {\scriptsize$\pm$2} s & 0.293 {\scriptsize$\pm$.001} \\",
+        r"Once every 10 batches & 83 {\scriptsize$\pm$2} s & 0.247 {\scriptsize$\pm$.001} & 657 {\scriptsize$\pm$2} s & 0.293 {\scriptsize$\pm$.001} \\",
+        r"Every batch & 118 {\scriptsize$\pm$2} s & 0.245 {\scriptsize$\pm$.001} & 1058 {\scriptsize$\pm$2} s & 0.292 {\scriptsize$\pm$.001} \\",
         r"\bottomrule",
     ]
     assert err == ""

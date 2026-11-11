@@ -10,7 +10,7 @@
   add --latex  for LaTeX rows to paste into the manuscript (booktabs), the std in a smaller font:
                  metric tables and runtime: \\toprule, header, rows, \\midrule before the t-SNE/UMAP/PaCMAP rows, \\bottomrule
                  stress: \\midrule, the metric rows, \\midrule, the non-metric rows, \\bottomrule; values without std
-                 isotonic: \\midrule, the rows, \\bottomrule; times in seconds on both datasets, no stds, --- for skipped
+                 isotonic: \\midrule, the rows, \\bottomrule; times in seconds on both datasets, --- for skipped
                  pca: the rows only (the header is yours)
                  no LaTeX version of summary
 
@@ -293,9 +293,9 @@ def isotonic_table(decimals, latex):
     for value_, label in labels.items():
         point = {"isotonic_fit_how_often": value_}
         cells = []
-        for d in datasets:  # LaTeX: no stds (the caption gives them); times in seconds on both datasets
-            time = lambda s, d=d: fmt_runtime(s, d, latex, std=not latex, seconds_only=True)
-            loss = lambda s: fmt(s, decimals, latex, std=not latex)
+        for d in datasets:  # times in seconds on both datasets
+            time = lambda s, d=d: fmt_runtime(s, d, latex, seconds_only=True)
+            loss = lambda s: fmt(s, decimals, latex)
             cells.append(ablation_cell(df, planned, d, point, "runtime", time, method))
             cells.append(ablation_cell(df, planned, d, point, "stress1_nonmetric", loss, method))
         rows.append((label, ["---" if latex and c == "--" else c for c in cells]))

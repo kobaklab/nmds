@@ -61,7 +61,7 @@ code/
   embed.py            stage 1: run methods, save embeddings and runtimes
   evaluate.py         stage 2: compute metrics for the saved embeddings
   collect.py          stage 3: join everything into results/all_runs.csv, report what is missing
-  ablations.py        parameter grids (isotonic frequency, batch size x lr, PCA before MDS), same stages
+  ablations.py        parameter grids (isotonic frequency, batch size x lr, PCA before MDS, random init), same stages
   tables.py           print mean ± std tables to copy into the manuscript
   display.py          names / row order / which method fills which table row
   plan.py, pipeline.py, results_io.py, paths.py    shared machinery
@@ -96,8 +96,9 @@ uv run python code/ablations.py embed          # also: evaluate, collect, status
 uv run python code/tables.py isotonic          # and: pca
 ```
 
-Figures: open `code/notebooks/figures_embeddings.ipynb` and `figures_sgd_params.ipynb`
-(`uv run jupyter lab`). Tests: `uv run pytest`.
+Figures: open `code/notebooks/figures_embeddings.ipynb`, `figures_sgd_params.ipynb` and `figures_supplement.ipynb`
+(`uv run jupyter lab`; the last one needs `ablations.py embed/evaluate --ablations mmds_random_init`, see its first cell).
+Tests: `uv run pytest`.
 
 ## What counts as one run, and where the ± comes from
 

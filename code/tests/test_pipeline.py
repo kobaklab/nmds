@@ -255,6 +255,10 @@ def test_real_ablation_grids():
     assert count("isotonic_frequency") == (5 + 4) * 3       # MNIST skips "every 100 epochs"
     assert count("batch_lr") == 2 * 24 * 1                  # the longest ablation is configured with one seed
     assert count("pca_then_mmds") == 8 * 3
+    random_init = ablations.ablation_jobs(["mmds_random_init"])
+    assert len(random_init) == 3 and {j.dataset for j in random_init} == {"blobs"}
+    assert all(j.kwargs == {"init": "random"} and j.seed == j.emb_seed for j in random_init)   # one embedding per seed
+    assert len({j.emb_path for j in random_init}) == 3
     jobs = ablations.ablation_jobs()
     assert len({j.metrics_path for j in jobs}) == len(jobs)
     pca = [j for j in jobs if j.tags.get("n_pcs") == 10]

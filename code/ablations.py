@@ -12,7 +12,8 @@ its keyword arguments. The dataset's usual settings for that method (method_kwar
 datasets.py) apply first and the grid values override them. Stochastic methods get
 one embedding per seed; deterministic ones are embedded once, as in the main runs.
 Every stage uses the seeds of the entry (default: three seeds; batch_lr, the longest, uses one);
---seeds overrides them for embed and evaluate.
+--seeds overrides them for embed and evaluate. An entry with stochastic=True gets one embedding per seed
+even if its base method is registered as deterministic (the setting makes it depend on the seed).
 To add an ablation, add an entry to ABLATIONS.
 """
 import argparse
@@ -51,6 +52,15 @@ ABLATIONS = {
         datasets=["genomes"],
         grid={"n_pcs": [5, 10, 15, 20, 30, 40, 50, 100]},
     ),
+    # Supplementary figure (code/notebooks/figures_supplement.ipynb): metric MDS from random initializations
+    # (three seeds), next to the main run, which starts from classical MDS. metric_mds is registered as
+    # deterministic, which holds for that classical start but not for a random one: hence stochastic=True.
+    "mmds_random_init": dict(
+        method="metric_mds",
+        datasets=["blobs"],
+        stochastic=True,
+        grid={"init": ["random"]},
+    ),
 }
 
 
@@ -71,7 +81,7 @@ def ablation_jobs(names=None, datasets=None, seeds=None):
                 stem = "__".join([method] + [f"{k}={v}" for k, v in point.items()])
                 base = RESULTS / "ablations" / name
                 for seed in seeds or spec.get("seeds", plan.SEEDS):
-                    emb_seed = plan.emb_seed_for(method, seed)
+                    emb_seed = seed if spec.get("stochastic") else plan.emb_seed_for(method, seed)
                     jobs.append(
                         plan.Job(
                             dataset=dataset,

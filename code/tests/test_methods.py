@@ -73,3 +73,12 @@ def test_umap_is_warmed_up_with_a_matrix_that_reaches_its_approximate_neighbour_
     building (more numba functions) needs n * 4 * d > 1 MiB on top of that (hybrid_forest.LOCAL_SUBTREE_BYTES)."""
     n, d = METHODS["umap"]["warm_up_shape"]
     assert n >= 4096 and n * 4 * d > 1 << 20
+
+
+def test_metric_mds_random_init_is_seeded_and_the_default_start_is_unchanged(X):
+    from methods import run_metric_mds
+
+    random_0 = run_metric_mds(X, False, 0, init="random")
+    np.testing.assert_allclose(random_0, run_metric_mds(X, False, 0, init="random"), atol=1e-8)   # reproducible per seed
+    assert not np.allclose(random_0, run_metric_mds(X, False, 1, init="random"), atol=1e-3)         # a different random start
+    np.testing.assert_allclose(run_metric_mds(X, False, 0), run_metric_mds(X, False, 1), atol=1e-8)  # classical init: seed-free

@@ -33,23 +33,26 @@ def run_classical_mds(X, precomputed, seed):
     return _classical_coords(X, precomputed)
 
 
-def _sklearn_mds(X, precomputed, metric_mds):
+def _sklearn_mds(X, precomputed, metric_mds, init="classical_mds", seed=None):
     return MDS(
         normalized_stress=True,
         n_init=1,
-        init="classical_mds",
+        init=init,
+        random_state=seed,  # only matters for init="random"
         metric_mds=metric_mds,
         metric="precomputed" if precomputed else "euclidean",
     ).fit_transform(X)
 
 
-def run_metric_mds(X, precomputed, seed, n_pcs=None):
+def run_metric_mds(X, precomputed, seed, n_pcs=None, init="classical_mds"):
     """sklearn (SMACOF) metric MDS; with n_pcs, on the first n_pcs classical-MDS/PCA
-    coordinates instead of on the raw data."""
+    coordinates instead of on the raw data. init="random" starts from a random configuration
+    (seeded: the method counts as deterministic only for the default classical-MDS initialization,
+    so an ablation with init="random" must be declared stochastic in ablations.py)."""
     if n_pcs is not None:
         X = _classical_coords(X, precomputed, n_components=n_pcs)
         precomputed = False
-    return _sklearn_mds(X, precomputed, metric_mds=True)
+    return _sklearn_mds(X, precomputed, metric_mds=True, init=init, seed=seed)
 
 
 def run_nonmetric_mds(X, precomputed, seed):

@@ -9,3 +9,7 @@ Input data (not tracked by git). Expected files:
     tasic-data/tasic-ttypes.npy            only used by the Tasic Shepard figure
 
 MNIST is downloaded automatically (into `openml/`) on first use; blobs and digits are generated.
+
+Preprocessed Tasic data can be downloaded from https://github.com/berenslab/rna-seq-tsne/tree/master/data/tasic-preprocessed.
+
+Preprocessed Genomes data will be shared later on.

@@ -5,8 +5,8 @@ simulations and saves the kNN accuracies to results/robustness/<name>.npz; code/
 makes the figure and the slopes from them.
 
 Simulation. Three clusters in the plane at pairwise distance D, plus d noise dimensions with standard deviation
-sigma. Metric and non-metric MDS (scikit-learn, random initialization) into 2-D, then the leave-one-out 10-NN
-accuracy of the embedding, averaged over the repetitions. The "breaking" dimension is the smallest d at which that
+sigma. Metric and non-metric MDS (scikit-learn, random initialization) and classical MDS (= PCA; deterministic,
+exact eigendecomposition) into 2-D, then the leave-one-out 10-NN accuracy of the embedding, averaged over the repetitions. The "breaking" dimension is the smallest d at which that
 average is below 0.7; the slope of log(breaking d) against log(D / sigma) is compared with the predictions 2
 (metric) and 4 (non-metric).
 
@@ -38,7 +38,7 @@ from types import SimpleNamespace
 import numpy as np
 from joblib import Parallel, delayed
 from scipy.stats import linregress
-from sklearn.manifold import MDS
+from sklearn.manifold import MDS, ClassicalMDS
 from sklearn.neighbors import KNeighborsClassifier
 
 import paths
@@ -46,6 +46,7 @@ import paths
 RESULTS_DIR = paths.RESULTS / "robustness"
 CHUNK = 1 << 16  # noise columns generated at a time; the noise is a function of (seed, column), not of this
 DEFAULT_REPS = 10
+METHODS = ("metric", "non-metric", "classical")  # the first axis of the saved accuracies
 
 
 @dataclass(frozen=True)
@@ -149,18 +150,26 @@ def knn_accuracy(Z, y, k=10):
     return KNeighborsClassifier(n_neighbors=k).fit(Z, y).score(None, y)
 
 
+def classical_accuracy(distances, y, k=10):
+    """kNN accuracy of classical MDS (= PCA) of a distance matrix: an exact, deterministic eigendecomposition."""
+    return knn_accuracy(ClassicalMDS(n_components=2, metric="precomputed").fit_transform(distances), y, k)
+
+
 def fit_accuracies(distances, y, seed, k=10, n_init=1):
-    """kNN accuracy of metric and of non-metric MDS (random initialization) of a distance matrix."""
+    """kNN accuracy of metric and of non-metric MDS (random initialization) and of classical MDS of a distance
+    matrix, in the order of METHODS."""
     accuracies = []
     for metric_mds in (True, False):
         mds = MDS(n_components=2, metric="precomputed", init="random", n_init=n_init, normalized_stress=True,
                   metric_mds=metric_mds, random_state=seed)
         accuracies.append(knn_accuracy(mds.fit_transform(distances), y, k))
+    accuracies.append(classical_accuracy(distances, y, k))
     return accuracies
 
 
-def run_repetition(cfg, rep, n_jobs=1):
-    """Accuracies, array (2, number of D, number of d): metric and non-metric MDS."""
+def repetition_matrices(cfg, rep):
+    """The class labels of repetition rep, and a generator of its distance matrices: for every distance D (outer loop)
+    and every noise dimensionality d (inner loop), the distances between the points."""
     Ds, dims = distance_grid(cfg), dims_grid(cfg)
     y, jitter = sample_dataset(cfg, rep)
     noise_sq = noise_squared_distances(cfg, len(y), rep, dims)
@@ -172,8 +181,14 @@ def run_repetition(cfg, rep, n_jobs=1):
                 dist = np.sqrt(sq_signal + noise_sq[int(d)])
                 yield (dist + dist.T) / 2  # exactly symmetric, zero diagonal
 
-    fits = Parallel(n_jobs=n_jobs)(delayed(fit_accuracies)(dist, y, rep, cfg.k, cfg.n_init) for dist in matrices())
-    return np.array(fits).reshape(len(Ds), len(dims), 2).transpose(2, 0, 1)
+    return y, matrices()
+
+
+def run_repetition(cfg, rep, n_jobs=1):
+    """Accuracies, array (len(METHODS), number of D, number of d)."""
+    y, matrices = repetition_matrices(cfg, rep)
+    fits = Parallel(n_jobs=n_jobs)(delayed(fit_accuracies)(dist, y, rep, cfg.k, cfg.n_init) for dist in matrices)
+    return np.array(fits).reshape(len(distance_grid(cfg)), len(dims_grid(cfg)), len(METHODS)).transpose(2, 0, 1)
 
 
 # --- running and saving -------------------------------------------------------------------------------------------
@@ -186,26 +201,36 @@ def _config_json(cfg):
     return json.dumps(asdict(cfg), sort_keys=True)
 
 
-def load(name):
-    """Saved results: accuracies acc (2, number of D, number of d, repetitions), dims, Ds, n_fit (the first n_fit
-    distances are the ones of the power-law fit), the config and the sigma of the noise."""
+def _read(name):
     with np.load(_path(name)) as f:
         config = json.loads(str(f["config"]))
-        return SimpleNamespace(name=name, acc=f["acc"], dims=f["dims"], Ds=f["Ds"], n_fit=int(f["n_fit"]),
-                               config=config, sigma=config["sigma"], threshold=config["threshold"],
-                               seconds=float(f["seconds"]))
+        methods = [str(m) for m in f["methods"]] if "methods" in f.files else ["metric", "non-metric"]  # older files
+        return SimpleNamespace(name=name, acc=f["acc"], dims=f["dims"], Ds=f["Ds"], n_fit=int(f["n_fit"]), methods=methods,
+                               config=config, sigma=config["sigma"], threshold=config["threshold"], seconds=float(f["seconds"]))
+
+
+def load(name):
+    """Saved results: accuracies acc (len(METHODS), number of D, number of d, repetitions), dims, Ds, n_fit (the first
+    n_fit distances are the ones of the power-law fit), the config and the sigma of the noise."""
+    result = _read(name)
+    if result.methods != list(METHODS):
+        raise ValueError(f"{name}: these results were saved before classical MDS was added; "
+                         f"rerun: uv run python code/mds_robustness.py {name}")
+    return result
 
 
 def run(name, reps=1, n_jobs=1, force=False):
     cfg = CONFIGS[name]
-    done = np.zeros((2, len(distance_grid(cfg)), len(dims_grid(cfg)), 0))
+    done = np.zeros((len(METHODS), len(distance_grid(cfg)), len(dims_grid(cfg)), 0))
     seconds = 0.0
     if _path(name).exists() and not force:
-        saved = load(name)
-        if saved.config == json.loads(_config_json(cfg)):
-            done, seconds = saved.acc, saved.seconds
-        else:
+        saved = _read(name)
+        if saved.config != json.loads(_config_json(cfg)):
             print(f"[{name}] the saved results are for another config: recomputing")
+        elif saved.methods != list(METHODS):
+            print(f"[{name}] the saved results predate classical MDS: recomputing")
+        else:
+            done, seconds = saved.acc, saved.seconds
     if done.shape[-1] >= reps:
         print(f"[{name}] already have {done.shape[-1]} repetition(s)")
     for rep in range(done.shape[-1], reps):
@@ -215,7 +240,7 @@ def run(name, reps=1, n_jobs=1, force=False):
         seconds += time.perf_counter() - start
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         np.savez(_path(name), acc=done, dims=dims_grid(cfg), Ds=distance_grid(cfg), n_fit=cfg.Ds[2],
-                 config=_config_json(cfg), seconds=seconds)
+                 config=_config_json(cfg), seconds=seconds, methods=np.array(METHODS))
         print(f"[{name}] repetition {rep + 1} of {reps} done in {time.perf_counter() - start:.0f} s", flush=True)
     return load(name)
 
@@ -237,25 +262,25 @@ def power_law_slope(distances, breaking):
 
 
 def mean_breaking_dims(result, reps=None):
-    """Breaking dimensions, shape (2, number of D in the fit): the accuracy is averaged over the repetitions
+    """Breaking dimensions, shape (len(METHODS), number of D in the fit): the accuracy is averaged over the repetitions
     (all of them, or the given indices) first, and the threshold is applied to the average."""
     acc = result.acc[:, : result.n_fit]
     if reps is not None:
         acc = acc[..., list(reps)]
     mean = acc.mean(axis=-1)
-    return np.array([breaking_dims(mean[m], result.dims, result.threshold) for m in range(2)])
+    return np.array([breaking_dims(mean[m], result.dims, result.threshold) for m in range(len(METHODS))])
 
 
 def slopes(result, reps=None):
-    """Slopes (metric, non-metric) of log(breaking dimension) against log(D / sigma), from the repetition-averaged accuracy."""
+    """Slopes of log(breaking dimension) against log(D / sigma), one per method (METHODS), from the repetition-averaged accuracy."""
     x = result.Ds[: result.n_fit] / result.sigma
     return np.array([power_law_slope(x, breaking) for breaking in mean_breaking_dims(result, reps)])
 
 
 def summary(result):
-    s = slopes(result)
+    cells = ", ".join(f"{method} {slope:.2f}" for method, slope in zip(result.methods, slopes(result)))
     return (f"[{result.name}] slope of the breaking dimension against D/sigma, accuracy averaged over "
-            f"{result.acc.shape[-1]} repetition(s): metric {s[0]:.2f}, non-metric {s[1]:.2f}")
+            f"{result.acc.shape[-1]} repetition(s): {cells}")
 
 
 def main():

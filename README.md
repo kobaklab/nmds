@@ -104,8 +104,8 @@ Tests: `uv run pytest`.
 ### Robustness to high-dimensional noise (separate from the pipeline)
 
 The simulation behind the figure `robustness` and its appendix is independent of everything above: three clusters
-plus d noise dimensions, metric and non-metric MDS from a random initialization, and the d at which the kNN accuracy
-of the embedding collapses. `code/mds_robustness.py` runs it and saves `results/robustness/<setting>.npz`; the notebook
+plus d noise dimensions, metric and non-metric MDS from a random initialization (and classical MDS = PCA as a deterministic
+reference), and the d at which the kNN accuracy of the embedding collapses. `code/mds_robustness.py` runs it and saves `results/robustness/<setting>.npz`; the notebook
 `code/notebooks/figures_robustness.ipynb` makes the figure and the slopes.
 
 ```
@@ -116,7 +116,7 @@ uv run python code/mds_robustness.py --reps 20 --jobs 8     # more repetitions (
 On one core the figure's setting takes about 20 minutes, each of the other settings with about 99 points 20 to 30 minutes, and
 the setting with 297 points hours; `--jobs` runs the MDS fits in parallel. Single settings can be run by name (`CONFIGS` in the file).
 
-Settings are in `CONFIGS` in that file. Results are saved after every repetition and a rerun only computes what is missing.
+Results saved by an older version, before classical MDS was added, are recomputed. Settings are in `CONFIGS` in that file. Results are saved after every repetition and a rerun only computes what is missing.
 Each repetition has its own noise and its own random initialization. The kNN accuracy is averaged over the repetitions
 before the breaking dimension (the first d below 0.7) is read off, which also averages out the occasional bad random start
 of MDS (at least three repetitions are needed for that). The notebook makes the figure and prints the slopes of every setting

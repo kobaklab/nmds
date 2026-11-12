@@ -121,7 +121,8 @@ def tiny(tmp_path, monkeypatch):
 
 def test_run_saves_and_does_not_recompute_saved_repetitions(tiny, monkeypatch):
     result = r.run("tiny", reps=2)
-    assert result.acc.shape == (2, 4, 4, 2) and result.n_fit == 3                        # 3 + 1 distances, 4 dimensions
+    assert result.acc.shape == (3, 4, 4, 2) and result.n_fit == 3                        # 3 methods, 3 + 1 distances, 4 dimensions
+    assert result.methods == ["metric", "non-metric", "classical"]
     np.testing.assert_allclose(result.Ds[:3], np.geomspace(5, 20, 3))
     assert result.Ds[3] == 10.0 and result.dims.tolist() == np.geomspace(1, 300, 4, dtype=int).tolist()
     assert (result.acc[:, 2, 0, :] > 0.9).all()                                         # D = 20, one noise dimension: separated
@@ -149,14 +150,14 @@ def test_parallel_fits_give_the_same_accuracies(tiny):
 def test_slopes_come_from_the_repetition_averaged_accuracy(tiny):
     result = r.run("tiny", reps=3)
     mean_accuracy = result.acc.mean(axis=-1)
-    for method in range(2):
+    for method in range(len(r.METHODS)):
         expected = r.breaking_dims(mean_accuracy[method, : result.n_fit], result.dims, result.threshold)
         np.testing.assert_array_equal(r.mean_breaking_dims(result)[method], expected)
-    assert r.slopes(result).shape == (2,)
+    assert r.slopes(result).shape == (3,)
     subset = r.mean_breaking_dims(result, reps=[0, 2])                      # a subset of repetitions is averaged on its own
     expected = r.breaking_dims(result.acc[0, : result.n_fit][..., [0, 2]].mean(axis=-1), result.dims, result.threshold)
     np.testing.assert_array_equal(subset[0], expected)
-    assert "metric" in r.summary(result) and "3 repetition" in r.summary(result)
+    assert "classical" in r.summary(result) and "3 repetition" in r.summary(result)
 
 
 def test_the_command_line_runs_all_settings_with_ten_repetitions_by_default(monkeypatch):
@@ -191,3 +192,44 @@ def test_n_init_is_part_of_the_config_and_repairs_a_bad_random_start(tiny, monke
     if single > 0.7:
         pytest.skip("the known bad random start no longer fails (scikit-learn's random numbers changed)")
     assert r.fit_accuracies(dist, y, 0, n_init=3)[1] > 0.9
+
+
+def test_classical_mds_is_exact_pca_and_does_not_depend_on_the_seed(small_chunks):
+    from sklearn.decomposition import PCA
+
+    cfg = r.Config(n=30)
+    y, jitter = r.sample_dataset(cfg, 0)
+    D, d = 8.0, 120
+    centres = np.array([[0, 0], [D, 0], [D / 2, D * np.sqrt(3) / 2]])
+    features = np.concatenate([centres[y] + (D / 10) * jitter, reference_noise(cfg, len(y), 0, d)], axis=1)
+    sq = r.signal_squared_distances(D, y, jitter) + r.noise_squared_distances(cfg, len(y), 0, [d])[d]
+    dist = np.sqrt(sq)
+    dist = (dist + dist.T) / 2
+    classical = r.fit_accuracies(dist, y, 0)[2]
+    assert classical == r.fit_accuracies(dist, y, 1)[2]                                  # deterministic
+    exact_pca = PCA(n_components=2, svd_solver="full").fit_transform(features)           # sklearn's default solver is approximate
+    assert classical == pytest.approx(r.knn_accuracy(exact_pca, y))
+
+
+def test_results_saved_before_classical_mds_are_recomputed_not_mixed(tiny, capsys):
+    saved = r.run("tiny", reps=1)
+    old = {"acc": saved.acc[:2], "dims": saved.dims, "Ds": saved.Ds, "n_fit": saved.n_fit, "seconds": 1.0,
+           "config": r._config_json(r.CONFIGS["tiny"])}                                  # the old format: two methods, no names
+    np.savez(r._path("tiny"), **old)
+    with pytest.raises(ValueError, match="before classical MDS"):
+        r.load("tiny")
+    capsys.readouterr()
+    fresh = r.run("tiny", reps=1)
+    assert "predate classical MDS" in capsys.readouterr().out
+    assert fresh.acc.shape[0] == 3 and fresh.methods == list(r.METHODS)
+
+
+def test_repetition_matrices_come_in_the_order_of_the_saved_array(tiny):
+    cfg = r.CONFIGS["tiny"]
+    y, matrices = r.repetition_matrices(cfg, 0)
+    matrices = list(matrices)
+    assert len(matrices) == 4 * 4 and all(m.shape == (30, 30) and np.allclose(m, m.T) and not np.diag(m).any() for m in matrices)
+    for first in range(0, 16, 4):                                       # same D (outer loop), more noise dimensions: larger distances
+        means = [matrices[first + i].mean() for i in range(4)]
+        assert means == sorted(means)
+    assert r.classical_accuracy(matrices[3], y) == r.fit_accuracies(matrices[3], y, 0)[2]

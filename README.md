@@ -2,9 +2,7 @@
 
 ![Classical, metric, and non-metric MDS of genomes data](figures/genomes.png)
 
-Code for the experiments of *Non-metric multidimensional scaling at scale*:
-`code/stochastic_mds.py` is the stochastic (mini-batch) metric / non-metric MDS; everything else
-runs the comparisons and produces the tables and figures.
+Code for *Stochastic non-metric MDS for noisy high-dimensional data*.
 
 * **To use our MDS in your own code**, see the next section: one file, no need for the rest of this repository.
 * **To reproduce our experiments**, continue with "Setup for reproducing the experiments".

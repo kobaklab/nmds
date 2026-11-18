@@ -1,52 +1,53 @@
 import numpy as np
+import pandas as pd
 import pytest
 from scipy.spatial.distance import pdist, squareform
 
 import datasets
 
 
+POPULATIONS = ["AAA", "BBB", "CCC"]
+COLORS = ["#111111", "#222222", "#333333"]
+
+
 @pytest.fixture
 def genomes_dir(tmp_path, monkeypatch):
+    """Small fake data in the format of the low-dim-embeddings-review repository."""
     monkeypatch.setattr(datasets, "DATA", tmp_path)
-    (tmp_path / "genomes-data").mkdir()
-    X = np.random.default_rng(0).normal(size=(40, 5))
-    np.save(tmp_path / "genomes-data/1000-genomes-labels.npy", np.arange(40) % 3)
-    return tmp_path, X
+    path = tmp_path / "genomes-data"
+    path.mkdir()
+    X = np.random.default_rng(0).integers(0, 3, size=(40, 120), dtype=np.int8)
+    np.savez(path / "gt_sum_thinned.npz", X=X)
+    pops = [POPULATIONS[i % 3] for i in range(len(X))]
+    pd.DataFrame({"sample": [f"HG{i:05d}" for i in range(len(X))], "pop": pops, "in phase 3": 1}).to_csv(
+        path / "affy_samples.20141118.panel", sep="\t", index=False)
+    pd.DataFrame({"pop": POPULATIONS[::-1], "color": COLORS[::-1]}).to_csv(path / "population_colors.csv", index=False)
+    return path, X
 
 
-@pytest.mark.parametrize("form", ["condensed float64", "full float32", "full float64"])
-def test_load_genomes_accepts_condensed_and_full_matrices(genomes_dir, form):
-    path, X = genomes_dir
-    D = pdist(X)
-    stored = {"condensed float64": D, "full float32": squareform(D).astype(np.float32), "full float64": squareform(D)}[form]
-    np.save(path / "genomes-data/1000-genomes-D.npy", stored)
-    loaded, y, precomputed = datasets.load_genomes()
-    assert precomputed and loaded.dtype == np.float64 and loaded.shape == (40, 40) and len(y) == 40
-    np.testing.assert_allclose(loaded, squareform(D), rtol=1e-6)
+def test_load_genomes_returns_the_euclidean_distance_matrix(genomes_dir):
+    _, X = genomes_dir
+    D, y, precomputed = datasets.load_genomes()
+    assert precomputed and D.dtype == np.float64 and D.shape == (40, 40)
+    np.testing.assert_allclose(D, squareform(pdist(X.astype(np.float64))), rtol=1e-12)
+    assert (np.diag(D) == 0).all() and (D == D.T).all()
 
 
-@pytest.mark.parametrize("bad", ["not symmetric", "diagonal", "wrong shape"])
-def test_load_genomes_rejects_things_that_are_not_distance_matrices(genomes_dir, bad):
-    path, X = genomes_dir
-    D = squareform(pdist(X))
-    if bad == "not symmetric":
-        D[0, 1] += 1
-    elif bad == "diagonal":
-        D = D + 1
-    else:
-        D = D[:, :30]
-    np.save(path / "genomes-data/1000-genomes-D.npy", D)
+def test_load_genomes_labels_are_population_colors(genomes_dir):
+    _, y, _ = datasets.load_genomes()
+    assert list(y) == [COLORS[i % 3] for i in range(40)]
+
+
+def test_genotype_distances_does_not_depend_on_the_chunk_size(genomes_dir):
+    _, X = genomes_dir
+    np.testing.assert_array_equal(datasets.genotype_distances(X, chunk_size=7), datasets.genotype_distances(X))
+
+
+def test_load_genomes_rejects_a_population_without_color(genomes_dir):
+    path, _ = genomes_dir
+    pd.DataFrame({"pop": POPULATIONS[:2], "color": COLORS[:2]}).to_csv(path / "population_colors.csv", index=False)
     with pytest.raises(ValueError):
         datasets.load_genomes()
-
-
-def test_load_genomes_tolerates_float32_noise_on_the_diagonal(genomes_dir):
-    path, X = genomes_dir
-    D = squareform(pdist(X)).astype(np.float32)
-    np.fill_diagonal(D, 3e-4)  # as left by some float32 distance routines
-    np.save(path / "genomes-data/1000-genomes-D.npy", D)
-    loaded, _, _ = datasets.load_genomes()
-    assert (np.diag(loaded) == 0).all()
 
 
 def test_load_mnist_uses_the_liac_arff_parser(monkeypatch):

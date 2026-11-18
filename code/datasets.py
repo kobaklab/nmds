@@ -9,7 +9,7 @@ Per-dataset options:
 To add a dataset, write a loader and add one entry to DATASETS.
 """
 import numpy as np
-from scipy.spatial.distance import squareform
+import pandas as pd
 from sklearn.datasets import fetch_openml, load_digits, make_blobs
 
 from paths import DATA
@@ -21,26 +21,44 @@ def load_blobs():
     return np.concatenate((X, noise), axis=1), y, False
 
 
-def load_genomes():
-    """Distance matrix of the genomes data. The file may hold the condensed form (n(n-1)/2
-    values, scipy's pdist format) or the full n x n matrix, in any float precision; it is
-    returned as a full float64 matrix."""
-    D = np.load(DATA / "genomes-data/1000-genomes-D.npy")
-    if D.ndim == 1:
-        D = squareform(D, force="tomatrix")
-    D = np.asarray(D, dtype=np.float64)
-    if D.ndim != 2 or D.shape[0] != D.shape[1]:
-        raise ValueError(f"1000-genomes-D.npy must be a condensed or a square distance matrix, got shape {D.shape}")
-    # Catches gross mistakes (wrong file, not a distance matrix). The tolerance is relative to the scale of
-    # D and loose on purpose: float32 distance routines leave ~sqrt(eps_float32) = 2e-4 noise on the diagonal.
-    tolerance = 1e-3 * D.max()
-    if not (np.abs(D - D.T).max() <= tolerance and np.abs(np.diag(D)).max() <= tolerance and D.min() >= -tolerance):
-        raise ValueError("1000-genomes-D.npy is not a distance matrix (not symmetric, non-zero diagonal or negative values)")
+def genotype_distances(X, chunk_size=5_000):
+    """Euclidean distance matrix of the genotype matrix X (small non-negative integers).
+
+    The Gram matrix is accumulated in float32 over column chunks to keep memory low. For the
+    1000 Genomes data this is exact: every entry is in {0, 1, 2}, so all partial sums stay
+    integers below 2^24, which float32 represents exactly.
+    """
+    n, p = X.shape
+    G = np.zeros((n, n), dtype=np.float32)
+    for start in range(0, p, chunk_size):
+        block = X[:, start:start + chunk_size].astype(np.float32)
+        G += block @ block.T
+    G = G.astype(np.float64)
+    sq_norms = np.diag(G).copy()
+    D2 = sq_norms[:, None] + sq_norms[None, :] - 2 * G
+    np.maximum(D2, 0, out=D2)
+    D = np.sqrt(D2)
     np.fill_diagonal(D, 0)  # the SGD normalization assumes an exactly zero diagonal
-    y = np.load(DATA / "genomes-data/1000-genomes-labels.npy")
-    if len(y) != len(D):
-        raise ValueError(f"{len(D)} points in the distance matrix but {len(y)} labels")
-    return D, y, True
+    return D
+
+
+def load_genomes():
+    """1000 Genomes Project data, in the format of the low-dim-embeddings-review repository.
+
+    The genotype matrix is converted into its Euclidean distance matrix, returned as a full
+    float64 matrix. The labels are each sample's population color.
+    """
+    path = DATA / "genomes-data"
+    X = np.load(path / "gt_sum_thinned.npz")["X"]
+    populations = pd.read_csv(path / "affy_samples.20141118.panel", sep="\t")["pop"].values
+    colors = pd.read_csv(path / "population_colors.csv").set_index("pop")["color"]
+    if len(populations) != len(X):
+        raise ValueError(f"{len(X)} samples in the genotype matrix but {len(populations)} in the panel file")
+    missing = sorted(set(populations) - set(colors.index))
+    if missing:
+        raise ValueError(f"no color for populations {missing} in population_colors.csv")
+    y = colors.loc[populations].to_numpy()
+    return genotype_distances(X), y, True
 
 
 def load_digits_dataset():

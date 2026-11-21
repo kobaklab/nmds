@@ -54,6 +54,7 @@ uv sync                       # creates .venv (CPU-only PyTorch on Linux/Windows
 
 ```
 code/
+  README.md           notes: what counts as one run, metric definitions, extending, timing
   stochastic_mds.py   the algorithm (needs torch)
   methods.py          registry of embedding methods
   datasets.py         registry of datasets (+ per-dataset skips and settings)
@@ -61,9 +62,10 @@ code/
   embed.py            stage 1: run methods, save embeddings and runtimes
   evaluate.py         stage 2: compute metrics for the saved embeddings
   collect.py          stage 3: join everything into results/all_runs.csv, report what is missing
-  ablations.py        parameter grids (isotonic frequency, batch size x lr, PCA before MDS, random init), same stages
+  ablations.py        parameter grids (isotonic frequency, batch size, PCA before MDS, random init), same stages
   mds_robustness.py   separate from the pipeline: the noise-robustness simulation of metric vs non-metric MDS
   tables.py           print mean ± std tables to copy into the manuscript
+  animations.py       GIFs of the optimization (SGD and SMACOF); smacof_trajectory.py records SMACOF
   display.py          names / row order / which method fills which table row
   plan.py, pipeline.py, results_io.py, paths.py    shared machinery
   notebooks/          figures only: they read saved results, they never compute embeddings
@@ -89,19 +91,22 @@ Everything takes `--datasets`, `--methods`, `--seeds` to restrict what runs, e.g
 Stages are incremental: finished work is skipped, so you can interrupt and resume. `embed.py --force`
 recomputes. A crashing run is logged and skipped; `collect.py` tells you what is missing.
 
-Ablations are kept apart from the main runs. Each uses three seeds, except `batch_lr` (the longest), which is configured
-with one (`seeds` in its entry in `code/ablations.py`); `--seeds` overrides the configured seeds for `embed` and `evaluate`:
+Ablations are kept apart from the main runs. Each uses three seeds, except the two batch-size ablations, which are
+configured with one (`seeds` in its entry in `code/ablations.py`); `--seeds` overrides the configured seeds for `embed` and `evaluate`:
 
 ```
 uv run python code/ablations.py embed          # also: evaluate, collect, status  (--ablations, --datasets, --seeds)
 uv run python code/tables.py isotonic          # and: pca
 ```
 
-Figures: open `code/notebooks/figures_embeddings.ipynb`, `figures_sgd_params.ipynb` and `figures_supplement.ipynb`
+Figures: open `code/notebooks/figures_embeddings.ipynb`, `figures_sgd_batch_size.ipynb` and `figures_supplement.ipynb`
 (`uv run jupyter lab`; the last one needs `ablations.py embed/evaluate --ablations mmds_random_init`, see its first cell).
 Tests: `uv run pytest`.
 
-### Robustness to high-dimensional noise (separate from the pipeline)
+More details (what counts as one run, metric definitions, extending the code, timing) are in
+[`code/README.md`](code/README.md).
+
+### Robustness to high-dimensional noise
 
 The simulation behind the figure `robustness` and its appendix is independent of everything above: three clusters
 plus d noise dimensions, metric and non-metric MDS from a random initialization (and classical MDS = PCA as a deterministic
@@ -116,73 +121,39 @@ uv run python code/mds_robustness.py --reps 20 --jobs 8     # more repetitions (
 On one core the figure's setting takes about 20 minutes, each of the other settings with about 99 points 20 to 30 minutes, and
 the setting with 297 points hours; `--jobs` runs the MDS fits in parallel. Single settings can be run by name (`CONFIGS` in the file).
 
-Results saved by an older version, before classical MDS was added, are recomputed. Settings are in `CONFIGS` in that file. Results are saved after every repetition and a rerun only computes what is missing.
-Each repetition has its own noise and its own random initialization. The kNN accuracy is averaged over the repetitions
-before the breaking dimension (the first d below 0.7) is read off, which also averages out the occasional bad random start
-of MDS (at least three repetitions are needed for that). The notebook makes the figure and prints the slopes of every setting
-in the format of the appendix table. `--n-init 3` (best of three random starts per fit; the paper uses one, about 10x slower)
-is an alternative for single repetitions.
+## Animations of the optimization
 
-## What counts as one run, and where the ± comes from
+GIFs of how our SGD and scikit-learn's SMACOF arrive at the embedding, e.g. for talks. They are separate from
+the pipeline and not used in the paper.
 
-* Stochastic methods (t-SNE, UMAP, SGD) are embedded once per seed. Methods marked `deterministic` in
-  `methods.py` (classical, SMACOF metric / non-metric MDS) are embedded **once**, with seed 0.
-  `tests/test_methods.py` checks that the flag is true.
-* Every metric is evaluated for **every** seed with that seed: it picks the evaluation subsample (n > 5000),
-  the triplets, and the train/test split. So the spread over seeds is optimization noise plus evaluation
-  noise; for a deterministic method it is evaluation noise only (and exactly zero for metrics that are exact
-  for n ≤ 5000, such as stress-1 on the small datasets).
-* Within one (dataset, seed) all methods share the same subsample, triplets and split, so comparisons are paired.
-* The std is the sample std (`DDOF = 1` in `tables.py`). Tables show it whenever it is above zero and always for
-  stochastic methods, even as `± 0.00` when every seed agrees; a deterministic method (SMACOF, classical MDS) with
-  identical values in all seeds has none.
+```
+uv run python code/animations.py compute                   # genomes, all four runs: results/animations/genomes_<run>.npz
+uv run python code/animations.py render                    # figures/animations/genomes_<run>_dark.gif, one per run
+uv run python code/animations.py compute --datasets tasic  # Tasic: the two SGD runs (no SMACOF, too slow there)
+uv run python code/animations.py render --datasets tasic
+```
 
-## Metric definitions
+Runs: `sgd_mmds`, `sgd_nmds` (our SGD, with the settings of the main runs and seed 0) and `smacof_mmds`,
+`smacof_nmds` (scikit-learn's SMACOF, classical-MDS start); `--methods` picks some of them. `compute` skips
+saved runs (`--force` recomputes), `render` only reads them. On one core, genomes takes about 6 minutes and the
+Tasic metric run a few; non-metric SGD on Tasic (500 epochs) takes much longer.
 
-* `stress1_metric` = sqrt(1 − cos²(d, d')), i.e. the stress-1 after optimally rescaling the embedding
-  distances d' to the original distances d. It equals the "adjusted stress-1" sqrt(s² / (1 + s²)) of a
-  converged embedding (the quantity in the old tables) but does not depend on the scale of the embedding,
-  which matters for sklearn, t-SNE and UMAP outputs.
-* `stress1_nonmetric`: the same with d replaced by its isotonic regression onto d' (Kruskal's stress-1).
-* Both are computed on the evaluation subsample, for **all** methods, after optimization. The batch-averaged
-  loss of the SGD runs is saved as `stress_curve` in the `.npz` (for training curves), but is not a table value.
-* Classical MDS on feature matrices is computed as PCA (identical up to sign, and it avoids the n × n matrix).
-* `knn_recall`: for each query point (all points up to 5000, else the evaluation subsample) the overlap between its
-  k = 10 nearest neighbours in the original space and in the embedding, averaged over the query points. Neighbours
-  are searched among all n points, the point itself is excluded. The high-dimensional neighbours are computed once
-  per (dataset, seed) and shared by all methods. (It is at chance level for a dataset like Blobs, where 1000 noise
-  dimensions decide who the neighbours are.)
-* PaCMAP has no precomputed-distance mode: for a distance matrix (genomes) it gets the first 100 classical-MDS
-  coordinates, which is what its own PCA step to 100 dimensions does for high-dimensional data.
-* Relation to other stress-1 values: at a converged SMACOF solution both metrics equal the "adjusted" stress-1
-  `sqrt(s² / (1 + s²))` of sklearn's `stress_` s (digits: metric 0.3468 → 0.3276, non-metric 0.2922 → 0.2805).
-  The value SGD reports for its mini-batches in the last epoch is close but not identical (digits: 0.282 vs 0.280
-  after optimization); it is saved as `stress_curve` and not used in the tables. Details in the docstrings in `metrics.py`.
+Rendering options: `--light` (white background, `..._light.gif`), `--jumps` (no interpolation between saved
+snapshots, so every SMACOF iteration is a jump; `..._jumps.gif`), `--lighten` (Tasic: lighter colours for the
+non-neuronal cells, which are hard to see on a dark background; `..._lighter.gif`), `--size` (pixels, default 720), `--seconds`
+(default 12, plus a short hold at the start and the end), `--fps` (default 15), `--tau` (see below).
 
-## Extending
+What the GIFs show:
 
-* **New method**: write `fn(X, precomputed, seed, **kwargs)` returning `Z` (or `(Z, extras)`), add one line to
-  `METHODS` in `methods.py` with `deterministic=True/False`. Then `embed.py --methods new`, `evaluate.py`, `collect.py`.
-* **New metric**: write `fn(ctx, Z) -> float`, add one line to `METRICS` in `metrics.py`, run `evaluate.py`: only
-  the new metric is computed, for all existing embeddings. After *changing* a metric:
-  `evaluate.py --force-metrics name`.
-* **New dataset**: loader + one entry in `DATASETS`. Use `skip=[...]` for methods that should not run on it and
-  `method_kwargs={method: {...}}` for non-default settings (as for `sgd_nmds` on Tasic). Changing settings
-  triggers a recomputation of the affected embeddings automatically.
-* **New ablation**: one entry in `ABLATIONS` in `ablations.py` (base method, datasets, grid of kwargs).
-* **Table rows**: which method fills "Metric" / "Non-metric" per dataset is in `display.py`.
+* Every frame is rescaled to unit RMS radius and centred on its (robust) bounding box, so only the shape is shown.
+* Time is logarithmic, `log(1 + epoch / tau)` with `tau = 2` (`--tau 0`: linear), so the first epochs, where most
+  of the change happens, get about a quarter of the animation.
+* Top right: the epoch (SGD) or iteration (SMACOF). Bottom right: the stress-1 of the current embedding, evaluated
+  as in `metrics.py` (not the batch averages of the optimizer).
 
-## Timing notes
-
-Runtime is the wall time of the whole method function (for SGD including its initialization), as run by
-`embed.py`, which runs one method at a time. Run it on an otherwise idle machine; `results/environment.json` records
-versions and CPU count. UMAP and t-SNE run single-threaded (a seed disables UMAP's parallelism; openTSNE's default is
-one job); PaCMAP (numba, faiss) and torch/BLAS in the SGD and SMACOF methods may use all cores, so say in the paper how
-many cores were available or pin the thread counts (`NUMBA_NUM_THREADS`, `OMP_NUM_THREADS`, ...).
-
-One-off costs (importing libraries such as torch, numba compilation, thread start-up) are not part of the runtime: the
-first time a method runs in a process, `embed.py` runs it once on a tiny synthetic problem outside the timer
-(`pipeline.WARM_UP`). A method can ask for a larger warm-up with `warm_up_shape` in `methods.py`: UMAP uses 4097 x 128,
-because its approximate neighbour search is only reached for n >= 4096 points with n * 4 * d > 1 MiB (with a smaller
-warm-up, 3-30 s of numba compilation lands in the first timed UMAP run on blobs, Tasic or MNIST). If a first run still
-looks inflated, rerun it with `embed.py --force --methods <name>`: numba caches compiled code on disk, so the rerun is clean.
+How the trajectories are recorded: `stochasticMDS(..., snapshot_every=N)` also returns the embedding every N epochs
+(or every N mini-batches with `snapshot_unit="batch"`), with the progress in epochs and the step size; taking
+snapshots does not change the result. `code/smacof_trajectory.py` records every iteration of one ordinary
+scikit-learn SMACOF run. (Running scikit-learn one iteration at a time, each starting from the previous result,
+is exact for metric MDS but not for non-metric MDS: its first iteration skips the isotonic regression, so such a
+chain converges to the metric solution.) Details are in the docstring of `animations.py`.

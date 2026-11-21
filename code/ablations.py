@@ -11,7 +11,7 @@ An ablation takes a base method from METHODS and runs it on each point of a grid
 its keyword arguments. The dataset's usual settings for that method (method_kwargs in
 datasets.py) apply first and the grid values override them. Stochastic methods get
 one embedding per seed; deterministic ones are embedded once, as in the main runs.
-Every stage uses the seeds of the entry (default: three seeds; batch_lr, the longest, uses one);
+Every stage uses the seeds of the entry (default: three seeds; the batch-size ablations use one);
 --seeds overrides them for embed and evaluate. An entry with stochastic=True gets one embedding per seed
 even if its base method is registered as deterministic (the setting makes it depend on the seed).
 To add an ablation, add an entry to ABLATIONS.
@@ -35,16 +35,22 @@ ABLATIONS = {
         grid={"isotonic_fit_how_often": [-100, -10, 0, 10, 1]},
         skip=[("mnist", {"isotonic_fit_how_often": -100})],
     ),
-    # Batch size x learning rate of the stochastic metric MDS (200 epochs on Tasic,
-    # 20 on MNIST: the defaults for their size).
-    "batch_lr": dict(
+    # Batch size of the stochastic MDS (the step size follows from it: one SMACOF step on the batch, see
+    # stochastic_mds.py). Metric MDS on Tasic, MNIST and genomes; non-metric MDS on genomes only (on Tasic and
+    # MNIST it would take very long with large batches). Epochs as in the main runs. One seed, to keep the
+    # runtime down; genomes (n = 3450) leaves out batch 3000.
+    "batch_size_mmds": dict(
         method="sgd_mmds",
-        datasets=["tasic", "mnist"],
-        seeds=[0],  # the longest ablation (24 grid points x 2 datasets): one seed instead of three
-        grid={
-            "batch_size": [100, 300, 1000, 3000],
-            "lr": [0.001, 0.003, 0.01, 0.03, 0.1, 0.3],
-        },
+        datasets=["tasic", "mnist", "genomes"],
+        seeds=[0],
+        grid={"batch_size": [100, 300, 1000, 3000]},
+        skip=[("genomes", {"batch_size": 3000})],
+    ),
+    "batch_size_nmds": dict(
+        method="sgd_nmds",
+        datasets=["genomes"],
+        seeds=[0],
+        grid={"batch_size": [100, 300, 1000]},
     ),
     # Metric MDS after keeping only the first n_pcs principal coordinates.
     "pca_then_mmds": dict(
@@ -102,7 +108,7 @@ def main():
     parser.add_argument("stage", choices=["embed", "evaluate", "collect", "status"])
     parser.add_argument("--ablations", nargs="+", choices=list(ABLATIONS), help="default: all")
     parser.add_argument("--datasets", nargs="+", choices=list(DATASETS), help="default: all")
-    parser.add_argument("--seeds", nargs="+", type=int, help=f"default: the seeds of each ablation ({plan.SEEDS}, batch_lr: one)")
+    parser.add_argument("--seeds", nargs="+", type=int, help=f"default: the seeds of each ablation ({plan.SEEDS}, batch_size_*: one)")
     parser.add_argument("--force", action="store_true", help="embed: recompute even if up to date")
     parser.add_argument("--metrics", nargs="+", choices=list(METRICS), help="evaluate: default all")
     parser.add_argument("--force-metrics", nargs="+", choices=list(METRICS), default=[],

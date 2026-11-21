@@ -31,7 +31,8 @@ def test_deterministic_methods_ignore_the_seed(name, precomputed, X):
 def test_stochastic_methods_depend_on_the_seed_and_are_reproducible(name, X):
     if name.startswith("sgd"):
         pytest.importorskip("torch")
-    kwargs = dict(n_epochs=5) if name.startswith("sgd") else {}
+    # batch_size: with the default (1000 for metric MDS, at most n) all 150 points form one batch and the seed has no effect
+    kwargs = dict(n_epochs=5, batch_size=50) if name.startswith("sgd") else {}
     a, b = run(name, X, False, 0, **kwargs), run(name, X, False, 0, **kwargs)
     c = run(name, X, False, 1, **kwargs)
     assert a.shape == (len(X), 2)
@@ -42,7 +43,7 @@ def test_stochastic_methods_depend_on_the_seed_and_are_reproducible(name, X):
 @pytest.mark.parametrize("name", ["sgd_mmds", "sgd_nmds"])
 def test_sgd_methods_return_training_curve_and_accept_settings(name, X):
     pytest.importorskip("torch")
-    Z, extras = METHODS[name]["fn"](X, False, 0, n_epochs=4, batch_size=50, lr=0.05)
+    Z, extras = METHODS[name]["fn"](X, False, 0, n_epochs=4, batch_size=50)
     assert Z.shape == (len(X), 2)
     assert extras["stress_curve"].shape == (4,)
 
@@ -82,3 +83,20 @@ def test_metric_mds_random_init_is_seeded_and_the_default_start_is_unchanged(X):
     np.testing.assert_allclose(random_0, run_metric_mds(X, False, 0, init="random"), atol=1e-8)   # reproducible per seed
     assert not np.allclose(random_0, run_metric_mds(X, False, 1, init="random"), atol=1e-3)         # a different random start
     np.testing.assert_allclose(run_metric_mds(X, False, 0), run_metric_mds(X, False, 1), atol=1e-8)  # classical init: seed-free
+
+
+def test_sgd_from_a_distance_matrix_with_several_threads():
+    """Regression test: classical MDS (the initialization for distance matrices) returns a column-major array;
+    SGD's sparse update of such a non-contiguous weight failed in torch when using several threads."""
+    torch = pytest.importorskip("torch")
+    from scipy.spatial.distance import pdist, squareform
+    from stochastic_mds import stochasticMDS
+
+    D = squareform(pdist(np.random.default_rng(0).normal(size=(1200, 5))))
+    threads = torch.get_num_threads()
+    torch.set_num_threads(2)
+    try:
+        Z, _ = stochasticMDS(D, precomputed_distances=True, n_epochs=1, batch_size=1000, verbose=False)
+    finally:
+        torch.set_num_threads(threads)
+    assert np.isfinite(Z).all()

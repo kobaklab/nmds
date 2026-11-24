@@ -2,10 +2,19 @@
 
 ![Classical, metric, and non-metric MDS of genomes data](figures/genomes.png)
 
-Code for *Stochastic non-metric MDS for noisy high-dimensional data*.
+Code for Damrich & Kobak, 2026, [Stochastic non-metric MDS for noisy high-dimensional data](https://arxiv.org/abs/2611.28985).
 
 * **To use our MDS in your own code**, see the next section: one file, no need for the rest of this repository.
 * **To reproduce our experiments**, continue with "Setup for reproducing the experiments".
+
+```
+@article{damrich2026stochastic,
+  title={Stochastic non-metric {MDS} for noisy high-dimensional data},
+  author={Damrich, Sebastian and Kobak, Dmitry},
+  journal={arXiv preprint arXiv:2611.28985},
+  year={2026}
+}
+```  
 
 ## Using the stochastic MDS in your own code
 
